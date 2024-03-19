@@ -2,9 +2,9 @@
 [ORG 0x7c00]
 
 start:
-    xor ax, ax
+    xor ax, ax   
     mov ds, ax
-    mov es, ax
+    mov es, ax  
     mov ss, ax
     mov sp, 0x7c00
 
@@ -28,10 +28,10 @@ LoadLoader:
     mov dl, [DriveId]
     mov ah, 0x42
     int 0x13
-    jc ReadError
+    jc  ReadError
 
     mov dl, [DriveId]
-    jmp 0x7e00
+    jmp 0x7e00 
 
 ReadError:
 NotSupport:
@@ -40,27 +40,27 @@ NotSupport:
     mov bx, 0xa
     xor dx, dx
     mov bp, Message
-    mov cx, MessageLen
+    mov cx, MessageLen 
     int 0x10
 
 End:
-    hlt
+    hlt    
     jmp End
-
+    
 DriveId:    db 0
-Message:	db "Error in boot process"
-MessageLen:	equ $-Message
+Message:    db "Error in boot process"
+MessageLen: equ $-Message
 ReadPacket: times 16 db 0
 
 times (0x1be-($-$$)) db 0
 
     db 80h
-    db 0,2,0
+    db 0, 2, 0
     db 0f0h
-    db 0ffh,0ffh,0ffh
+    db 0ffh, 0ffh, 0ffh
     dd 1
     dd (20*16*63-1)
-
+	
     times (16*3) db 0
 
     db 0x55
