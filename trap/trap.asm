@@ -21,9 +21,13 @@ global vector18
 global vector19
 global vector32
 global vector39
+global sysint
 global eoi
 global read_isr
 global load_idt
+global load_cr3
+global pstart
+global read_cr2
 
 Trap:
     push rax
@@ -41,10 +45,6 @@ Trap:
     push r13
     push r14
     push r15
-
-    ; print using text video mode
-    inc byte[0xb8010]       ; increment character
-    mov byte[0xb8011], 0xe   ; set color
 
     mov rdi, rsp
     call handler
@@ -165,6 +165,13 @@ vector39:
     push 39
     jmp Trap
 
+
+sysint:
+    push 0      ; no error code
+    push 0x80   ; trap number
+    jmp Trap
+
+
 eoi:
     mov al, 0x20        ; we write the value to the command register of the PIC. The bit 5 of the value is non-specific end of interrupt, we set it to 1.
     out 0x20, al        ; then we write it to the command register of the master (at address 0x20).
@@ -181,3 +188,15 @@ load_idt:           ; arguments passed from c file will be stored in RDI registe
     lidt [rdi]      ; parameter, address of Idt - which is stored in argument rdi
     ret
 
+load_cr3:
+    mov rax, rdi
+    mov cr3, rax
+    ret
+
+read_cr2:
+    mov rax, cr2
+    ret
+
+pstart:
+    mov rsp, rdi
+    jmp TrapReturn

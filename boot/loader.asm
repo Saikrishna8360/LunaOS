@@ -29,25 +29,41 @@ LoadKernel:
     int 0x13
     jc  ReadError
 
+LoadUser:
+    mov si, ReadPacket
+    mov word[si], 0x10
+    mov word[si+2], 10
+    mov word[si+4], 0
+    mov word[si+6], 0x2000
+    mov dword[si+8], 106       ; Since first 106 sectors for boot, loader and kernel programs
+    mov dword[si+0xc], 0
+    mov dl, [DriveId]
+    mov ah, 0x42
+    int 0x13
+    jc  ReadError
+
 GetMemInfoStart:    ; Get memory map information
     mov eax, 0xe820
     mov edx, 0x534d4150
     mov ecx, 20
-    mov edi, 0x9000
+    mov dword[0x9000], 0        ; store count of structures of memory map info 
+    mov edi, 0x9008             ; structures are stored from 0x9008
     xor ebx, ebx
     int 0x15
     jc NotSupport
 
 GetMemInfo:
-    add edi, 20
+    add edi, 20                 ; get next structure
+    inc dword[0x9000]           ; increase count
+    test ebx, ebx               ; test ebx, if ebx is 0, it means that we reach the end and we jump to getMemDone.
+    jz GetMemDone
+
     mov eax, 0xe820
     mov edx, 0x534d4150
     mov ecx, 20
-    int 0x15
-    jc GetMemDone
+    int 0x15                    ; If carry flag is not set after executing int instruction, we will jump to get mem info    
+    jnc GetMemInfo
 
-    test ebx, ebx
-    jnz GetMemInfo
 
 GetMemDone:
 TestA20:            ; routine to check A20 line
@@ -107,14 +123,30 @@ PMEntry:        ; segment registers hold index of entry in GDT, so set to the in
 ; 48 bit virtual Address space
 
     cld                  ; clear direction flag
-
+    ; The code here is for setting up paging. First off, we zero the 10000 bytes of memory region starting from 70000.
     mov edi, 0x70000
     xor eax, eax
     mov ecx, 0x10000/4
     rep stosd
     
-    mov dword[0x70000], 0x71007
-    mov dword[0x71000], 10000111b
+    ; Each entry in the page map level 4 table represent 512g and we only implement the low 1g, so we set up the first entry of the table.
+    
+    ; store next table address (page directory pointer table) as first entry in main page table, so the address is 71000 (Each table takes up 4k space, since the table include 512 entries (each entry 8 bytes - 64 bits)) - attributes - 011 -> 3 (only accessed by kernel)
+
+    ; setup physical page table entries for virtual address 0 for kernel for 1 GB page size
+    mov dword[0x70000], 0x71003       
+    mov dword[0x71000], 10000011b       ; 011 -> 3 (only kernel mode access) and 7th bit set to 1 to represent 1 GB page translation
+
+    ; remap kernel from 200000 to 0xffff800000200000
+    ; we map the virtual address to the same 1g physical page. So the two translations we set up will eventually point to the same physical page where the kernel is stored
+
+    mov eax, (0xffff800000000000>>39)   ; index is from 39th bit
+    and eax, 0x1ff                      ; get index using and operation
+    mov dword[0x70000+eax*8], 0x72003   ; load the next page level table address (0x72000, attributes - 3) to page table entry at index (each entry 8 bytes) 
+    mov dword[0x72000], 10000011b       ; same as kernel address set in physical page    
+
+
+
 
 
     lgdt [Gdt64Ptr]
@@ -124,8 +156,10 @@ PMEntry:        ; segment registers hold index of entry in GDT, so set to the in
     or eax, (1<<5)       ; set bit 5
     mov cr4, eax
 
-    mov eax, 0x70000      ; value represents the physical address of the page directory base for paging. (sets to cr3)
-    mov cr3, eax
+    mov eax, 0x70000      
+    mov cr3, eax            ; The value of cr3 is 70000. So the address of page map level 4 table is 70000.
+
+
 
     mov ecx, 0xc0000080     ; index value represents the model-specific register (MSR) that controls various processor features.
     rdmsr                   ; read msr to eax
@@ -152,7 +186,8 @@ LMEntry:
     mov rcx, 51200/8         ; number of quadwords to copy - 100 sectors each 512 bytes
     rep movsq                ; repeats the movsq (move quadword (8 bytes) from rsi to rdi) operation rcx times, effectively copying 51200 bytes from the source address (0x10000) to the destination address (0x200000)
 
-    jmp 0x200000
+    mov rax, 0xffff800000200000     ; load kernel address to rax and use rax to jump
+    jmp rax
     
 LEnd:
     hlt

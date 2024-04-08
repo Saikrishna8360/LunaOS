@@ -70,6 +70,7 @@ void vector18(void);
 void vector19(void);
 void vector32(void);
 void vector39(void);
+void sysint(void);
 
 // All codes defined in asm and also previously covered in old kernel.asm file
 // initialize idt
@@ -84,4 +85,5 @@ void load_idt(struct IdtPtr *ptr);
 // read ISR
 unsigned char read_isr(void);
 
+uint64_t read_cr2(void);
 #endif

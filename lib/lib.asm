@@ -40,11 +40,11 @@ memmove:
     std                 ; set direction flag
     add rdi, rdx        ; set addresses to end of values by adding size 
     add rsi, rdx
-    sub rdi,1           ; decrement by 1 for accurate position
-    sub rsi,1
+    sub rdi, 1           ; decrement by 1 for accurate position
+    sub rsi, 1
 
 .copy:
-    mov ecx,edx         ; mov size to ecz (loop counter)
+    mov ecx, edx         ; mov size to ecz (loop counter)
     rep movsb           ; repeat move
     cld                 ; clear direction flag
     ret                 ; return

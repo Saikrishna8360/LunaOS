@@ -1,4 +1,6 @@
 section .data
+global Tss
+
 
 Gdt64:
     dq 0
@@ -24,10 +26,10 @@ Gdt64Ptr: dw Gdt64Len-1
 
 
 Tss:
-    dd 0            ; 1st 4 bits reserved
-    dq 0x150000     ; Address to load RSP
-    times 88 db 0   ; remaining bits set to 0
-    dd TssLen       ; Address of I/O permission bit map - not used
+    dd 0                      ; 1st 4 bits reserved
+    dq 0xffff800000190000     ; Address to load RSP
+    times 88 db 0             ; remaining bits set to 0
+    dd TssLen                 ; Address of I/O permission bit map - not used
 
 TssLen: equ $-Tss
 
@@ -40,7 +42,8 @@ extern KMain
 global start
 
 start:
-    lgdt [Gdt64Ptr]
+    mov rax, Gdt64Ptr       ; store Gdt64Ptr address at the address at rax and use rax to load gdt
+    lgdt [rax]
 
 
 ; Load the TSS descriptor
@@ -125,9 +128,9 @@ InitPIC:
     out 0xa1, al
 
 
-
+    mov rax, KernelEntry        ; store KernelEntry address at rax address and push it to stack
     push 8              ; Push segment selector
-    push KernelEntry    ; Push instruction pointer
+    push rax            ; Push instruction pointer
     db 0x48             ; Use 64-bit operand size for retf
     retf                ; Far Return to the KernelEntry
 
@@ -135,7 +138,7 @@ KernelEntry:
     ; xor ax, ax
     ; mov ss, ax
 
-    mov rsp, 0x200000
+    mov rsp, 0xffff800000200000
     call KMain
     ; sti             ; enable interrupts
 

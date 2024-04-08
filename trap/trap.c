@@ -1,4 +1,6 @@
 #include "trap.h"
+#include "../lib/print.h"
+#include "../lib/syscall.h"
 
 // Idt pointer
 static struct IdtPtr idt_pointer;
@@ -40,6 +42,9 @@ void init_idt(void)
     init_idt_entry(&vectors[32], (uint64_t)vector32, 0x8e);
     init_idt_entry(&vectors[39], (uint64_t)vector39, 0x8e);
 
+    // interrupt vector is 0x80, program it uses/ entry point is sysint, attrubutes are 0xee, since DPL is set to ring 3, since we want to access this from ring 3 for print function
+    init_idt_entry(&vectors[0x80], (uint64_t)sysint, 0xee);
+
     // set limit and address for Idt_pointer
     idt_pointer.limit = sizeof(vectors) - 1;
     idt_pointer.addr = (uint64_t)vectors;
@@ -66,8 +71,13 @@ void handler(struct TrapFrame *tf)
         }
         break;
 
+    case 0x80:
+        system_call(tf);
+        break;
+
     // Default case is where there is error in kernel code as of now, so stops system with an inf loop
     default:
+        printk("[Error %d at ring %d] %d:%x %x", tf->trapno, (tf->cs & 3), tf->errorcode, read_cr2(), tf->rip);
         while (1)
         {
         }
