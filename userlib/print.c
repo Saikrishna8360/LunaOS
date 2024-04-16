@@ -119,7 +119,6 @@ int printf(const char *format, ...)
         }
     }
 
-    // This function will then execute int instruction to send the request to the kernel. The return value indicates the count of characters being printed on the screen, so stored in buffer_size
     buffer_size = writeu(buffer, buffer_size);
     va_end(args);
 

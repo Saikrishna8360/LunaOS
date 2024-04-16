@@ -8,6 +8,7 @@
 extern struct TSS Tss;
 static struct Process process_table[NUM_PROC]; // like process queue
 static int pid_num = 1;
+static struct ProcessControl pc;
 
 // assign the top of the kernel stack to rsp0 in the tss. So when we jump from ring3 to ring0, the kernel stack is used. The tss is defined in the kernel file.
 static void set_tss(struct Process *proc)
@@ -33,7 +34,7 @@ static struct Process *find_unused_process(void)
 }
 
 // Sets PCB
-static void set_process_entry(struct Process *proc)
+static void set_process_entry(struct Process *proc, uint64_t addr)
 {
     uint64_t stack_top;
 
@@ -46,6 +47,9 @@ static void set_process_entry(struct Process *proc)
     memset((void *)proc->stack, 0, PAGE_SIZE); // zeros the page
     stack_top = proc->stack + STACK_SIZE;      // Sets stack top to base address of next page (since stack grows downwards)
     // so it will decrement the pointer when data is pushed onto stack
+
+    proc->context = stack_top - sizeof(struct TrapFrame) - 7 * 8;
+    *(uint64_t *)(proc->context + 6 * 8) = (uint64_t)TrapReturn;
 
     // In our system, the top of the kernel stack is set to the rsp0 in tss. Meaning that, when the interrupt or exception handler is called, the stack used in this case is actually the kernel stack we set up in the process.
 
@@ -63,7 +67,13 @@ static void set_process_entry(struct Process *proc)
     // setup Kernel virtual memory
     proc->page_map = setup_kvm(); // page_map stores PML4 table
     ASSERT(proc->page_map != 0);
-    ASSERT(setup_uvm(proc->page_map, (uint64_t)P2V(0x20000), 5120)); // setup uvm - arguments are PML4 table, address of start of user program and size of program which is the page size
+    ASSERT(setup_uvm(proc->page_map, P2V(addr), 5120)); // setup uvm - arguments are PML4 table, address of start of user program and size of program which is the page size
+    proc->state = PROC_READY;
+}
+
+static struct ProcessControl *get_pc(void)
+{
+    return &pc;
 }
 
 // Initialize new process
@@ -71,20 +81,84 @@ static void set_process_entry(struct Process *proc)
 // check if it is the first entry in process table
 void init_process(void)
 {
-    struct Process *proc = find_unused_process();
-    ASSERT(proc == &process_table[0]);
+    struct ProcessControl *process_control;
+    struct Process *process;
+    struct HeadList *list;
+    uint64_t addr[2] = {0x20000, 0x30000};
 
-    set_process_entry(proc);
+    process_control = get_pc();
+    list = &process_control->ready_list;
+
+    for (int i = 0; i < 2; i++)
+    {
+        process = find_unused_process();
+        set_process_entry(process, addr[i]);
+        append_list_tail(list, (struct List *)process);
+    }
 }
 
 // start process
 void launch(void)
 {
-    set_tss(&process_table[0]);
-    switch_vm(process_table[0].page_map);
+    struct ProcessControl *process_control;
+    struct Process *process;
+
+    process_control = get_pc();
+    process = (struct Process *)remove_list_head(&process_control->ready_list);
+    process->state = PROC_RUNNING;
+    process_control->current_process = process;
+
+    set_tss(process);
+    switch_vm(process->page_map);
+    pstart(process->tf);
     // now we are at the process virtual space and we have copied the main function in the address 400000
     // jump to trap return to get to ring3 and run the main function.
 
     // change rsp register to point to the start of the trap frame when we at trap return.
-    pstart(process_table[0].tf);
+}
+
+static void switch_process(struct Process *prev, struct Process *current)
+{
+    set_tss(current);
+    switch_vm(current->page_map);
+    swap(&prev->context, current->context);
+}
+
+static void schedule(void)
+{
+    struct Process *prev_proc;
+    struct Process *current_proc;
+    struct ProcessControl *process_control;
+    struct HeadList *list;
+
+    process_control = get_pc();
+    prev_proc = process_control->current_process;
+    list = &process_control->ready_list;
+    ASSERT(!is_list_empty(list));
+
+    current_proc = (struct Process *)remove_list_head(list);
+    current_proc->state = PROC_RUNNING;
+    process_control->current_process = current_proc;
+
+    switch_process(prev_proc, current_proc);
+}
+
+void yield(void)
+{
+    struct ProcessControl *process_control;
+    struct Process *process;
+    struct HeadList *list;
+
+    process_control = get_pc();
+    list = &process_control->ready_list;
+
+    if (is_list_empty(list))
+    {
+        return;
+    }
+
+    process = process_control->current_process;
+    process->state = PROC_READY;
+    append_list_tail(list, (struct List *)process);
+    schedule();
 }

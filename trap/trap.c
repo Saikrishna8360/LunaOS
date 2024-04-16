@@ -1,6 +1,8 @@
 #include "trap.h"
 #include "../lib/print.h"
 #include "../lib/syscall.h"
+#include "../kernel/process/process.h"
+#include "../lib/debug.h"
 
 // Idt pointer
 static struct IdtPtr idt_pointer;
@@ -77,9 +79,14 @@ void handler(struct TrapFrame *tf)
 
     // Default case is where there is error in kernel code as of now, so stops system with an inf loop
     default:
-        printk("[Error %d at ring %d] %d:%x %x", tf->trapno, (tf->cs & 3), tf->errorcode, read_cr2(), tf->rip);
+        // printk("[Error %d at ring %d] %d:%x %x", tf->trapno, (tf->cs & 3), tf->errorcode, read_cr2(), tf->rip);
         while (1)
         {
         }
+    }
+
+    if (tf->trapno == 32)
+    {
+        yield();
     }
 }
