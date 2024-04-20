@@ -1,15 +1,20 @@
-#include "trap.h"
-#include "print.h"
-#include "memory.h"
-#include "process.h"
-#include "syscall.h"
+#include "lib.h"
+#include "stdint.h"
+#include "stdio.h"
 
-void KMain(void)
-{ 
-   init_idt();
-   init_memory();  
-   init_kvm();
-   init_system_call();
-   init_process();
-   launch();
+int main(void)
+{
+    int64_t counter = 0;
+    int64_t limit;
+
+    printf("Enter the limit for the counter : ");
+    scanf("%ld", &limit);
+
+    while (counter < limit)
+    {
+        // if (counter % 10001 == 0)
+        //     printf("process1 %d\n", counter);
+        counter++;
+    }
+    return 0;
 }
