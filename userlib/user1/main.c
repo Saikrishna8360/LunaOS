@@ -7,9 +7,13 @@ int main(void)
 
     while (1)
     {
-        if (counter % 1000000 == 0)
-            printf("process1 %d\n", counter);
-        counter++;
+        // if (counter % 1000000 == 0)
+        //     printf("process1 %d\n", counter);
+        // counter++;
+        // if (counter == 10000000)
+        // {
+        //     break;
+        // }
     }
     return 0;
 }

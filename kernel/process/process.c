@@ -6,9 +6,45 @@
 #include "../../lib/debug.h"
 
 extern struct TSS Tss;
+uint64_t freq = 0;
 static struct Process process_table[NUM_PROC]; // like process queue
 static int pid_num = 1;
 static struct ProcessControl pc;
+
+uint64_t runTime = 0;
+uint64_t startTime1 = 0;
+uint64_t endTime1 = 0;
+
+int chosen_algorithm = 1;
+
+int runTimes[NUM_PROC] = {30, 33, 36};
+
+static uint64_t calculate_optimal_time_quantum(struct Process *process_table, int num_processes)
+{
+    uint64_t max_burst = 0, min_burst = UINT64_MAX;
+    ;
+
+    // Find maximum and minimum burst times
+
+    for (int i = 0; i < num_processes; i++)
+    {
+        if (process_table[i].burst_time > max_burst)
+            max_burst = process_table[i].burst_time;
+        if (process_table[i].burst_time < min_burst)
+            min_burst = process_table[i].burst_time;
+    }
+
+    // Calculate time quantum
+    return max_burst - min_burst;
+}
+
+// Inline assembly to read the Time Stamp Counter
+static inline uint64_t read_tsc()
+{
+    uint32_t low, high;
+    __asm__ __volatile__("rdtsc" : "=a"(low), "=d"(high));
+    return ((uint64_t)high << 32) | low;
+}
 
 // assign the top of the kernel stack to rsp0 in the tss. So when we jump from ring3 to ring0, the kernel stack is used. The tss is defined in the kernel file.
 static void set_tss(struct Process *proc)
@@ -84,17 +120,38 @@ void init_process(void)
     struct ProcessControl *process_control;
     struct Process *process;
     struct HeadList *list;
-    uint64_t addr[2] = {0x20000, 0x30000};
+    uint64_t addr[3] = {0x20000, 0x30000, 0x40000};
 
     process_control = get_pc();
     list = &process_control->ready_list;
 
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < 3; i++)
     {
         process = find_unused_process();
         set_process_entry(process, addr[i]);
         append_list_tail(list, (struct List *)process);
     }
+
+    process_table[0].burst_time = runTimes[0];
+    process_table[1].burst_time = runTimes[1];
+    process_table[2].burst_time = runTimes[2];
+
+    switch (chosen_algorithm)
+    {
+    case 1:
+    OPTIMAL_ROUND_ROBIN:
+        runTime = calculate_optimal_time_quantum(process_table, 3);
+        printk("\n%d\n", runTime);
+        freq = 1193182 / calculate_optimal_time_quantum(process_table, 3);
+        printk("%d\n", freq);
+
+    default:
+        // Handle unsupported algorithm
+        break;
+    }
+
+    startTime1 = read_tsc();
+    printk("%d\n", startTime1);
 }
 
 // start process
@@ -137,10 +194,16 @@ static void schedule(void)
     ASSERT(!is_list_empty(list));
 
     current_proc = (struct Process *)remove_list_head(list);
-    current_proc->state = PROC_RUNNING;
-    process_control->current_process = current_proc;
-
-    switch_process(prev_proc, current_proc);
+    if (current_proc->state == PROC_READY)
+    {
+        current_proc->state = PROC_RUNNING;
+        process_control->current_process = current_proc;
+        switch_process(prev_proc, current_proc);
+    }
+    else
+    {
+        schedule();
+    }
 }
 
 void yield(void)
@@ -152,13 +215,119 @@ void yield(void)
     process_control = get_pc();
     list = &process_control->ready_list;
 
+    process = process_control->current_process;
+    process->state = PROC_READY;
+
+    process->burst_time = process->burst_time - runTime;
+    if (process->burst_time <= 0)
+    {
+        endTime1 = read_tsc();
+        printk("Process ID: %d, completed. %d, end_time: %d\n", process->pid, process->burst_time, endTime1 - startTime1);
+        exit();
+    }
+
+    switch (chosen_algorithm)
+    {
+    case 1:
+    OPTIMAL_ROUND_ROBIN:
+        int prevRunTime = runTime;
+        runTime = calculate_optimal_time_quantum(process_table, 3);
+        if (runTime <= 0)
+        {
+            runTime = 1s;
+        }
+        printk("\n%d\n", runTime);
+        freq = 1193182 / runTime;
+        printk("%d\n", freq);
+
+    default:
+        // Handle unsupported algorithm
+        break;
+    }
+
     if (is_list_empty(list))
     {
         return;
     }
 
-    process = process_control->current_process;
-    process->state = PROC_READY;
     append_list_tail(list, (struct List *)process);
     schedule();
+}
+
+void sleep(int wait)
+{
+    struct ProcessControl *process_control;
+    struct Process *process;
+
+    process_control = get_pc();
+    process = process_control->current_process;
+    process->state = PROC_SLEEP;
+    process->wait = wait;
+
+    append_list_tail(&process_control->wait_list, (struct List *)process);
+    schedule();
+}
+
+void wake_up(int wait)
+{
+    struct ProcessControl *process_control;
+    struct Process *process;
+    struct HeadList *ready_list;
+    struct HeadList *wait_list;
+
+    process_control = get_pc();
+    ready_list = &process_control->ready_list;
+    wait_list = &process_control->wait_list;
+    process = (struct Process *)remove_list(wait_list, wait);
+
+    while (process != NULL)
+    {
+        process->state = PROC_READY;
+        append_list_tail(ready_list, (struct List *)process);
+        process = (struct Process *)remove_list(wait_list, wait);
+    }
+}
+
+void exit(void)
+{
+    struct ProcessControl *process_control;
+    struct Process *process;
+    struct HeadList *list;
+
+    process_control = get_pc();
+    process = process_control->current_process;
+    process->state = PROC_KILLED;
+
+    list = &process_control->kill_list;
+    append_list_tail(list, (struct List *)process);
+
+    wake_up(1);
+    schedule();
+}
+
+void wait(void)
+{
+    struct ProcessControl *process_control;
+    struct Process *process;
+    struct HeadList *list;
+
+    process_control = get_pc();
+    list = &process_control->kill_list;
+
+    while (1)
+    {
+        if (!is_list_empty(list))
+        {
+            process = (struct Process *)remove_list_head(list);
+            ASSERT(process->state == PROC_KILLED);
+
+            kfree(process->stack);
+            free_vm(process->page_map);
+            memset(process, 0, sizeof(struct Process));
+        }
+        else
+        {
+            sleep(1);
+        }
+    }
 }
