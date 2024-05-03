@@ -1,8 +1,7 @@
 section .data
-
 global Tss
 
-extern freq
+extern timer
 
 
 Gdt64:
@@ -81,8 +80,7 @@ InitPIT:
 
 ; we load a counter value and PIT will decrement this value at a rate of about 1.2 Mega HZ which means it will decrement the value roughly 1.2 million times per second
 ; For 100 interrupts per second we do 1193182/100 = 11931
-
-    mov rax, freq
+    mov rax, timer
     out 0x40, al
     mov al, ah
     out 0x40, al

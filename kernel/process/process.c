@@ -6,23 +6,74 @@
 #include "../../lib/debug.h"
 
 extern struct TSS Tss;
-uint64_t freq = 0;
 static struct Process process_table[NUM_PROC]; // like process queue
 static int pid_num = 1;
 static struct ProcessControl pc;
 
-uint64_t runTime = 0;
-uint64_t startTime1 = 0;
-uint64_t endTime1 = 0;
+int timer = 0;
+int runTime = 0;
+const uint64_t size = 3;
 
-int chosen_algorithm = 1;
+int count = 0;
 
-int runTimes[NUM_PROC] = {30, 33, 36};
+int i = 0;
+
+int runTimes[NUM_PROC] = {27, 16, 19};
+
+void swapProcesses(struct Process *a, struct Process *b)
+{
+    struct Process temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+// Function to sort an array of Process structures using Bubble Sort
+void bubble_sort_by_burst_time(struct Process *process_table, int num_processes)
+{
+    bool swapped;
+
+    for (int i = 0; i < num_processes - 1; i++)
+    {
+        swapped = false;
+
+        for (int j = 0; j < num_processes - i - 1; j++)
+        {
+            if (process_table[j].burst_time > process_table[j + 1].burst_time)
+            {
+                swapProcesses(&process_table[j], &process_table[j + 1]);
+                swapped = true;
+            }
+        }
+
+        if (!swapped)
+        {
+            break;
+        }
+    }
+}
+
+int sqrt(int number)
+{
+    if (number < 0)
+    {
+        return -1; // Return -1 for invalid input
+    }
+
+    int guess = number / 2; // Initial guess
+    int last_guess = 0;
+
+    while (guess != last_guess)
+    {
+        last_guess = guess;
+        guess = (guess + number / guess) / 2; // Integer-based Newton-Raphson method
+    }
+
+    return guess; // Return the approximated square root
+}
 
 static uint64_t calculate_optimal_time_quantum(struct Process *process_table, int num_processes)
 {
     uint64_t max_burst = 0, min_burst = UINT64_MAX;
-    ;
 
     // Find maximum and minimum burst times
 
@@ -36,6 +87,64 @@ static uint64_t calculate_optimal_time_quantum(struct Process *process_table, in
 
     // Calculate time quantum
     return max_burst - min_burst;
+}
+
+void schedule_algorithm(int choice)
+{
+    switch (choice)
+    {
+    case 1:
+    OPTIMAL_ROUND_ROBIN:
+        runTime = calculate_optimal_time_quantum(process_table, size);
+        timer = 1193182 / (1000 / runTime);
+        break;
+
+    case 2:
+        bubble_sort_by_burst_time(process_table, size);
+        i = size / 2;
+        if (size % 2 == 0)
+        {
+            timer = (process_table[i - 1].burst_time + process_table[i].burst_time) / 2;
+        }
+        else
+        {
+            timer = process_table[i].burst_time;
+        }
+
+        for (int i = 0; i < size; i++)
+        {
+            printk("%d ", process_table[i].burst_time);
+        }
+        printk("\n%d\n", timer);
+
+        break;
+
+    case 3:
+        bubble_sort_by_burst_time(process_table, size);
+        i = size / 2;
+        int median = 0;
+        if (size % 2 == 0)
+        {
+            median = (process_table[i - 1].burst_time + process_table[i].burst_time) / 2;
+        }
+        else
+        {
+            median = process_table[i].burst_time;
+        }
+
+        timer = sqrt(median * process_table[size - 1].burst_time);
+        for (int i = 0; i < size; i++)
+        {
+            printk("%d ", process_table[i].burst_time);
+        }
+        printk("\n%d\n", timer);
+
+        break;
+
+    default:
+        // Handle unsupported algorithm
+        break;
+    }
 }
 
 // Inline assembly to read the Time Stamp Counter
@@ -125,7 +234,7 @@ void init_process(void)
     process_control = get_pc();
     list = &process_control->ready_list;
 
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 2; i++)
     {
         process = find_unused_process();
         set_process_entry(process, addr[i]);
@@ -136,22 +245,10 @@ void init_process(void)
     process_table[1].burst_time = runTimes[1];
     process_table[2].burst_time = runTimes[2];
 
-    switch (chosen_algorithm)
-    {
-    case 1:
-    OPTIMAL_ROUND_ROBIN:
-        runTime = calculate_optimal_time_quantum(process_table, 3);
-        printk("\n%d\n", runTime);
-        freq = 1193182 / calculate_optimal_time_quantum(process_table, 3);
-        printk("%d\n", freq);
-
-    default:
-        // Handle unsupported algorithm
-        break;
-    }
-
-    startTime1 = read_tsc();
-    printk("%d\n", startTime1);
+    // int startTime1 = read_tsc();
+    printk("\nScheduling Time\n%d\n", read_tsc());
+    schedule_algorithm(2);
+    printk("\n%d\n", read_tsc());
 }
 
 // start process
@@ -179,6 +276,11 @@ static void switch_process(struct Process *prev, struct Process *current)
     set_tss(current);
     switch_vm(current->page_map);
     swap(&prev->context, current->context);
+    // if (count < 5)
+    // {
+    //     printk("%d\n", read_tsc());
+    // }
+    // count++;
 }
 
 static void schedule(void)
@@ -194,20 +296,19 @@ static void schedule(void)
     ASSERT(!is_list_empty(list));
 
     current_proc = (struct Process *)remove_list_head(list);
-    if (current_proc->state == PROC_READY)
-    {
-        current_proc->state = PROC_RUNNING;
-        process_control->current_process = current_proc;
-        switch_process(prev_proc, current_proc);
-    }
-    else
-    {
-        schedule();
-    }
+    current_proc->state = PROC_RUNNING;
+    process_control->current_process = current_proc;
+
+    switch_process(prev_proc, current_proc);
 }
 
 void yield(void)
 {
+    // if (count < 5)
+    // {
+    //     printk("\n%d\n%d\n", count, read_tsc());
+    // }
+
     struct ProcessControl *process_control;
     struct Process *process;
     struct HeadList *list;
@@ -215,119 +316,13 @@ void yield(void)
     process_control = get_pc();
     list = &process_control->ready_list;
 
-    process = process_control->current_process;
-    process->state = PROC_READY;
-
-    process->burst_time = process->burst_time - runTime;
-    if (process->burst_time <= 0)
-    {
-        endTime1 = read_tsc();
-        printk("Process ID: %d, completed. %d, end_time: %d\n", process->pid, process->burst_time, endTime1 - startTime1);
-        exit();
-    }
-
-    switch (chosen_algorithm)
-    {
-    case 1:
-    OPTIMAL_ROUND_ROBIN:
-        int prevRunTime = runTime;
-        runTime = calculate_optimal_time_quantum(process_table, 3);
-        if (runTime <= 0)
-        {
-            runTime = 1s;
-        }
-        printk("\n%d\n", runTime);
-        freq = 1193182 / runTime;
-        printk("%d\n", freq);
-
-    default:
-        // Handle unsupported algorithm
-        break;
-    }
-
     if (is_list_empty(list))
     {
         return;
     }
 
+    process = process_control->current_process;
+    process->state = PROC_READY;
     append_list_tail(list, (struct List *)process);
     schedule();
-}
-
-void sleep(int wait)
-{
-    struct ProcessControl *process_control;
-    struct Process *process;
-
-    process_control = get_pc();
-    process = process_control->current_process;
-    process->state = PROC_SLEEP;
-    process->wait = wait;
-
-    append_list_tail(&process_control->wait_list, (struct List *)process);
-    schedule();
-}
-
-void wake_up(int wait)
-{
-    struct ProcessControl *process_control;
-    struct Process *process;
-    struct HeadList *ready_list;
-    struct HeadList *wait_list;
-
-    process_control = get_pc();
-    ready_list = &process_control->ready_list;
-    wait_list = &process_control->wait_list;
-    process = (struct Process *)remove_list(wait_list, wait);
-
-    while (process != NULL)
-    {
-        process->state = PROC_READY;
-        append_list_tail(ready_list, (struct List *)process);
-        process = (struct Process *)remove_list(wait_list, wait);
-    }
-}
-
-void exit(void)
-{
-    struct ProcessControl *process_control;
-    struct Process *process;
-    struct HeadList *list;
-
-    process_control = get_pc();
-    process = process_control->current_process;
-    process->state = PROC_KILLED;
-
-    list = &process_control->kill_list;
-    append_list_tail(list, (struct List *)process);
-
-    wake_up(1);
-    schedule();
-}
-
-void wait(void)
-{
-    struct ProcessControl *process_control;
-    struct Process *process;
-    struct HeadList *list;
-
-    process_control = get_pc();
-    list = &process_control->kill_list;
-
-    while (1)
-    {
-        if (!is_list_empty(list))
-        {
-            process = (struct Process *)remove_list_head(list);
-            ASSERT(process->state == PROC_KILLED);
-
-            kfree(process->stack);
-            free_vm(process->page_map);
-            memset(process, 0, sizeof(struct Process));
-        }
-        else
-        {
-            sleep(1);
-        }
-    }
 }

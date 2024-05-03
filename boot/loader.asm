@@ -68,7 +68,6 @@ LoadUser3:
     int 0x13
     jc  ReadError
 
-
 GetMemInfoStart:    ; Get memory map information
     mov eax, 0xe820
     mov edx, 0x534d4150
