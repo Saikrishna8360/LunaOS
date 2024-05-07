@@ -1,0 +1,18 @@
+To run the OS, download the code.
+
+The setup below if for Windows:
+
+Enable 'Windows Subsystem in Linux' (WSL) and install Ubuntu distribution
+
+Install bochs and update the path for boot.img in bochsrc.bxrc
+
+Run bochsrc.bxrc
+
+
+
+=========================================================================================================
+
+
+References:
+1. OSDEV: https://wiki.osdev.org/Expanded_Main_Page
+2. Write Your Own Operating System From Scratch - Step by Step: https://www.udemy.com/course/writing-your-own-operating-system-from-scratch/?couponCode=LETSLEARNNOWPP
